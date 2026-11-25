@@ -1,0 +1,1888 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asistente Médico - Control de Citas, Historial y Caja</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #059669;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .dia-calendario {
+            min-height: 90px;
+            transition: all 0.2s;
+        }
+        .dia-calendario:hover {
+            background-color: #ecfdf5;
+        }
+        @media print {
+            body * { visibility: hidden; }
+            #areaImpresionPDF, #areaImpresionPDF * { visibility: visible; }
+            #areaImpresionPDF { position: absolute; left: 0; top: 0; width: 100%; }
+        }
+    </style>
+</head>
+<body class="bg-emerald-50 min-h-screen font-sans text-slate-800">
+
+    <!-- MENÚ SUPERIOR (OCULTO EN VISTA PACIENTE Y LOGIN, VISIBLE EN ADMIN) -->
+    <header id="headerAdmin" class="bg-emerald-700 text-white shadow-md sticky top-0 z-40 hidden">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-2">
+            <div class="flex items-center gap-2">
+                <span class="text-2xl">🩺</span>
+                <div>
+                    <h1 class="text-lg sm:text-xl font-bold leading-tight">Asistente Médico OS</h1>
+                    <p id="usuarioActivoLabel" class="text-[11px] text-emerald-100 hidden sm:block">Panel de Control y Gestión de Caja</p>
+                </div>
+            </div>
+            <nav class="flex items-center gap-2 sm:gap-3">
+                <button onclick="cerrarSesionAdmin()" class="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition">
+                    Cerrar Sesión
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-3 sm:p-6">
+
+        <!-- ================= VISTA LOGIN INICIAL ================= -->
+        <section id="vista-login" class="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden my-12 border border-emerald-200">
+            <div class="bg-gradient-to-r from-emerald-600 to-emerald-700 p-6 text-white text-center">
+                <span class="text-3xl">🔐</span>
+                <h2 class="text-2xl font-bold mt-2">Acceso Asistente / Admin</h2>
+                <p class="text-emerald-100 text-xs mt-1">Ingresa tus credenciales para administrar el sistema</p>
+            </div>
+            <form id="loginForm" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1">Usuario</label>
+                    <input type="text" id="loginUsuario" required placeholder="Ingresa tu usuario"
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1">Contraseña</label>
+                    <input type="password" id="loginClave" required placeholder="••••"
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm">
+                </div>
+                <button type="submit"
+                    class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition shadow-md text-sm mt-2">
+                    Ingresar al Panel
+                </button>
+                <div class="text-center pt-2 border-t border-slate-100">
+                    <button type="button" onclick="iniciarRecuperacionContrasena()" class="text-xs font-semibold text-emerald-700 hover:text-emerald-900 hover:underline">
+                        ¿Olvidaste tu contraseña? Recupérala por WhatsApp
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <!-- ================= VISTA PACIENTE (PORTAL DE RESERVA PÚBLICO) ================= -->
+        <section id="vista-paciente" class="max-w-xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden my-4 sm:my-6 border border-emerald-200 hidden">
+            <div class="bg-gradient-to-r from-emerald-600 to-emerald-700 p-6 text-white text-center">
+                <h2 class="text-2xl font-bold">Reserva tu Cita Médica</h2>
+                <p id="subtituloConsultorioPaciente" class="text-emerald-100 text-sm mt-1">Completa tus datos para agendar tu consulta</p>
+            </div>
+            
+            <form id="citaForm" class="p-5 sm:p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1">Nombre y Apellido *</label>
+                    <input type="text" id="nombre" required placeholder="Ej: Carlos Silva"
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm">
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Cédula / ID *</label>
+                        <input type="text" id="cedula" required placeholder="Ej: V-15234567"
+                            class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Edad *</label>
+                        <input type="number" id="edad" required min="0" max="120" placeholder="Ej: 40"
+                            class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Sexo *</label>
+                        <select id="sexo" required class="w-full px-3 py-2.5 border border-slate-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <option value="Femenino">Femenino</option>
+                            <option value="Masculino">Masculino</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1">Teléfono (WhatsApp) *</label>
+                    <div class="flex gap-2">
+                        <select id="codigoPais" class="w-2/5 sm:w-1/3 px-2.5 py-2.5 border border-slate-300 rounded-lg bg-slate-50 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <option value="+58">🇻🇪 +58 (VE)</option>
+                            <option value="+57">🇨🇴 +57 (CO)</option>
+                            <option value="+1">🇺🇸 +1 (US)</option>
+                            <option value="+34">🇪🇸 +34 (ES)</option>
+                            <option value="+54">🇦🇷 +54 (AR)</option>
+                            <option value="+56">🇨🇱 +56 (CL)</option>
+                            <option value="+51">🇵🇪 +51 (PE)</option>
+                            <option value="+593">🇪🇨 +593 (EC)</option>
+                            <option value="+507">🇵🇦 +507 (PA)</option>
+                            <option value="+52">🇲🇽 +52 (MX)</option>
+                        </select>
+                        <input type="tel" id="telefono" required placeholder="4121234567"
+                            class="w-3/5 sm:w-2/3 px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1">Motivo de la Consulta / Diagnóstico *</label>
+                    <textarea id="sintomatologia" required rows="2" placeholder="Describe brevemente el motivo de tu consulta..."
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm"></textarea>
+                </div>
+
+                <hr class="border-slate-200 my-4">
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Fecha de la Cita *</label>
+                        <input type="date" id="fecha" required
+                            class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm">
+                        <p id="avisoDiaNoLaborable" class="hidden text-xs text-red-600 mt-1 font-medium">⚠️ El consultorio no labora este día.</p>
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="block text-sm font-semibold text-slate-700">Hora Disponible *</label>
+                            <span id="loadingHoras" class="hidden text-xs text-emerald-600 flex items-center gap-1">
+                                <span class="loader"></span> Cargando...
+                            </span>
+                        </div>
+                        <select id="hora" required disabled class="w-full px-4 py-2.5 border border-slate-300 rounded-lg bg-slate-50 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <option value="">Elige primero una fecha...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit" id="btnSubmit"
+                    class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-xl transition shadow-md text-sm sm:text-base mt-2">
+                    Confirmar Cita
+                </button>
+            </form>
+        </section>
+
+        <!-- ================= VISTA ASISTENTE / ADMINISTRADOR ================= -->
+        <section id="vista-medico" class="hidden space-y-6">
+            
+            <!-- Barra de navegación interna del panel asistente -->
+            <div class="bg-white p-3 sm:p-4 rounded-xl shadow flex flex-wrap justify-between items-center gap-3 border border-emerald-200">
+                <div class="flex flex-wrap gap-1.5 sm:gap-2">
+                    <button onclick="cambiarPestanaMedico('agenda')" id="tab-agenda" class="px-3 sm:px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium text-xs sm:text-sm transition">📅 Calendario y Citas</button>
+                    <button onclick="cambiarPestanaMedico('historial')" id="tab-historial" class="px-3 sm:px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-xs sm:text-sm transition">📂 Historial de Asistencias</button>
+                    <button onclick="cambiarPestanaMedico('config-agenda')" id="tab-config-agenda" class="px-3 sm:px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-xs sm:text-sm transition">⚙️ Configurar Agenda</button>
+                    <button onclick="cambiarPestanaMedico('pagos')" id="tab-pagos" class="px-3 sm:px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-xs sm:text-sm transition">💰 Caja y Pagos</button>
+                    <button onclick="cambiarPestanaMedico('respaldo-bd')" id="tab-respaldo-bd" class="px-3 sm:px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-xs sm:text-sm transition">🗄️ Base de Datos</button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="compartirLinkPacienteWhatsApp()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition">
+                        📲 Enviar Link al Paciente
+                    </button>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 1: CALENDARIO Y CITAS -->
+            <div id="seccion-agenda" class="bg-white rounded-xl shadow p-4 sm:p-6 space-y-6 border border-emerald-200">
+                <div class="flex flex-wrap justify-between items-center gap-4 border-b pb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-800">Agenda de Citas Médicas</h3>
+                        <p class="text-xs text-slate-500">Visualiza el calendario semanal o mensual y gestiona el listado de pacientes agendados.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button onclick="abrirModalAgendarAdmin()" class="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs hover:bg-emerald-700 font-bold flex items-center gap-1 shadow-sm">
+                            ➕ Agendar Cita Manual
+                        </button>
+                        <div class="bg-slate-100 p-1 rounded-lg flex text-xs font-semibold">
+                            <button onclick="cambiarModoCalendario('semana')" id="btnModoSemana" class="px-3 py-1 rounded-md bg-white text-emerald-700 shadow-sm">Semanal</button>
+                            <button onclick="cambiarModoCalendario('mes')" id="btnModoMes" class="px-3 py-1 rounded-md text-slate-600 hover:text-slate-900">Mensual</button>
+                        </div>
+                        <button id="btnSincronizarAdmin" onclick="sincronizarManualAdmin()" class="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs hover:bg-emerald-700 font-semibold flex items-center gap-1 transition">
+                            🔄 Sincronizar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center bg-slate-50 p-3 rounded-xl border">
+                    <button onclick="navegarCalendario(-1)" class="px-3 py-1 bg-white border rounded-lg text-xs sm:text-sm font-semibold hover:bg-slate-100">◀ Anterior</button>
+                    <h4 id="tituloPeriodoCalendario" class="font-bold text-emerald-900 text-sm sm:text-base capitalize">Noviembre 2026</h4>
+                    <button onclick="navegarCalendario(1)" class="px-3 py-1 bg-white border rounded-lg text-xs sm:text-sm font-semibold hover:bg-slate-100">Siguiente ▶</button>
+                </div>
+
+                <div id="contenedorCalendarioVisual" class="overflow-x-auto">
+                    <div class="min-w-[650px]">
+                        <div class="grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-600 mb-1">
+                            <div class="p-2 bg-slate-100 rounded">Dom</div>
+                            <div class="p-2 bg-slate-100 rounded">Lun</div>
+                            <div class="p-2 bg-slate-100 rounded">Mar</div>
+                            <div class="p-2 bg-slate-100 rounded">Mié</div>
+                            <div class="p-2 bg-slate-100 rounded">Jue</div>
+                            <div class="p-2 bg-slate-100 rounded">Vie</div>
+                            <div class="p-2 bg-slate-100 rounded">Sáb</div>
+                        </div>
+                        <div id="gridCalendario" class="grid grid-cols-7 gap-1"></div>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t">
+                    <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
+                        <h4 class="font-bold text-slate-700 text-sm">📋 Listado de Pacientes Agendados</h4>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-700 text-xs sm:text-sm">
+                                    <th class="p-3">Fecha</th>
+                                    <th class="p-3">Hora</th>
+                                    <th class="p-3">Paciente</th>
+                                    <th class="p-3">Cédula / Edad / Sexo</th>
+                                    <th class="p-3">Teléfono</th>
+                                    <th class="p-3">Motivo Consulta</th>
+                                    <th class="p-3 text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tablaCitasAdmin" class="text-xs sm:text-sm divide-y divide-slate-200">
+                                <tr><td colspan="7" class="p-4 text-center text-slate-500">Cargando citas...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 1B: HISTORIAL DE ASISTENCIAS DEL PACIENTE -->
+            <div id="seccion-historial" class="hidden bg-white rounded-xl shadow p-4 sm:p-6 space-y-6 border border-emerald-200">
+                <div class="flex flex-wrap justify-between items-center gap-2 border-b pb-3">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-800">📂 Historial de Asistencias Médicas</h3>
+                        <p class="text-xs text-slate-500">Busca por número de cédula para visualizar todas las veces que el paciente ha asistido a consulta con el especialista.</p>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input type="text" id="buscarCedulaHistorialInput" placeholder="Ingrese número de cédula (Ej: V-15234567)"
+                        class="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+                    <button onclick="buscarHistorialAsistencias()" class="bg-emerald-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-emerald-700 text-sm">🔍 Consultar Historial</button>
+                </div>
+
+                <div id="resultadoHistorialAsistencias" class="hidden space-y-4">
+                    <div id="resumenPacienteHistorial" class="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex flex-wrap justify-between items-center gap-4"></div>
+                    <div class="space-y-3">
+                        <h4 class="font-bold text-slate-800 text-sm">📜 Registro Detallado de Consultas Previas:</h4>
+                        <div id="timelineAsistencias" class="space-y-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 2: CONFIGURAR AGENDA, LINK Y USUARIOS ADMINISTRADORES -->
+            <div id="seccion-config-agenda" class="hidden bg-white rounded-xl shadow p-4 sm:p-6 space-y-6 border border-emerald-200">
+                <div class="flex flex-wrap justify-between items-start gap-4 border-b pb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-800">Configuración de Agenda, Enlace y Usuarios</h3>
+                        <p class="text-xs sm:text-sm text-slate-500">Gestiona el enlace de pacientes, horarios laborables y los usuarios con acceso al sistema.</p>
+                    </div>
+                    <button onclick="compartirLinkPacienteWhatsApp()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow">
+                        📲 Enviar Link al Paciente
+                    </button>
+                </div>
+
+                <!-- BLOQUE: ENLACE DE PACIENTES -->
+                <div class="bg-emerald-50 border border-emerald-200 p-4 rounded-xl space-y-2">
+                    <h4 class="font-bold text-emerald-900 text-sm">🔗 Enlace Público de Agendamiento (Para Copiar y Enviar)</h4>
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <input type="text" id="inputLinkPublicoPaciente" readonly class="flex-1 p-2.5 border border-emerald-300 rounded-lg text-xs sm:text-sm bg-white font-mono text-slate-700">
+                        <button type="button" onclick="copiarLinkPaciente()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold">📋 Copiar Link</button>
+                    </div>
+                </div>
+
+                <!-- BLOQUE NUEVO: GESTIÓN DE USUARIOS Y CONTRASEÑAS -->
+                <div class="bg-slate-50 border border-slate-200 p-4 sm:p-5 rounded-xl space-y-4">
+                    <div>
+                        <h4 class="font-bold text-slate-800 text-sm">👥 Usuarios y Contraseñas de Acceso (Administradores / Asistentes)</h4>
+                        <p class="text-xs text-slate-500">Crea cuentas de acceso y asocia un número de WhatsApp para recuperar contraseñas olvidadas.</p>
+                    </div>
+
+                    <form id="formNuevoUsuario" class="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-white p-3.5 rounded-lg border border-slate-200">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Usuario *</label>
+                            <input type="text" id="newUserLogin" required placeholder="Ej: dra_maria" class="w-full p-2 border rounded-lg text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Contraseña *</label>
+                            <input type="password" id="newUserPass" required placeholder="••••••••" class="w-full p-2 border rounded-lg text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Teléfono WhatsApp *</label>
+                            <input type="tel" id="newUserPhone" required placeholder="Ej: +584121234567" class="w-full p-2 border rounded-lg text-xs">
+                        </div>
+                        <div class="flex items-end">
+                            <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-lg text-xs shadow-sm transition">
+                                ➕ Crear Usuario
+                            </button>
+                        </div>
+                    </form>
+
+                    <div class="overflow-x-auto bg-white rounded-lg border border-slate-200">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-700">
+                                    <th class="p-2.5">Usuario</th>
+                                    <th class="p-2.5">Teléfono de Recuperación</th>
+                                    <th class="p-2.5">Contraseña</th>
+                                    <th class="p-2.5 text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tablaUsuariosAdmin" class="divide-y divide-slate-200"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- BLOQUE: CONFIGURACIÓN DE CONSULTORIO Y HORARIOS -->
+                <form id="formConfigConsultorio" class="space-y-6">
+                    <div class="bg-emerald-50/70 p-4 rounded-xl border border-emerald-200 space-y-4">
+                        <h4 class="font-bold text-emerald-900 text-sm">🏥 Datos del Consultorio</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">Nombre del Médico / Consultorio *</label>
+                                <input type="text" id="cfgMedico" required placeholder="Ej: Dr. Juan Pérez" class="w-full p-2.5 border rounded-lg text-sm bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">Dirección del Consultorio *</label>
+                                <input type="text" id="cfgDireccion" required placeholder="Ej: Centro Médico..." class="w-full p-2.5 border rounded-lg text-sm bg-white">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-4 rounded-xl border space-y-3">
+                        <h4 class="font-bold text-slate-800 text-sm">📆 Días Laborables</h4>
+                        <div class="flex flex-wrap gap-3 text-sm">
+                            <label class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border cursor-pointer"><input type="checkbox" class="dia-check" value="1" checked> Lunes</label>
+                            <label class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border cursor-pointer"><input type="checkbox" class="dia-check" value="2" checked> Martes</label>
+                            <label class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border cursor-pointer"><input type="checkbox" class="dia-check" value="3" checked> Miércoles</label>
+                            <label class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border cursor-pointer"><input type="checkbox" class="dia-check" value="4" checked> Jueves</label>
+                            <label class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border cursor-pointer"><input type="checkbox" class="dia-check" value="5" checked> Viernes</label>
+                            <label class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border cursor-pointer"><input type="checkbox" class="dia-check" value="6"> Sábado</label>
+                            <label class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border cursor-pointer"><input type="checkbox" class="dia-check" value="0"> Domingo</label>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-4 rounded-xl border space-y-3">
+                        <h4 class="font-bold text-slate-800 text-sm">⏰ Horas Disponibles (Separadas por coma)</h4>
+                        <textarea id="cfgHorarios" rows="2" class="w-full p-3 border rounded-lg text-sm bg-white font-mono"></textarea>
+                    </div>
+
+                    <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-3 rounded-xl text-sm shadow transition">
+                        💾 Guardar Configuración de Agenda
+                    </button>
+                </form>
+            </div>
+
+            <!-- SECCIÓN 3: CAJA Y PAGOS MULTIMONEDA -->
+            <div id="seccion-pagos" class="hidden bg-white rounded-xl shadow p-4 sm:p-6 space-y-6 border border-emerald-200">
+                <div class="flex flex-wrap justify-between items-center gap-3 border-b pb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-800">💰 Pacientes Atendidos y Caja Diaria Multimoneda</h3>
+                        <p class="text-xs text-slate-500">Consulta los pacientes atendidos por fecha. Los registros son inmutables y los días anteriores están bloqueados contra modificaciones.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="flex items-center gap-2 bg-emerald-50 border border-emerald-300 px-3 py-1.5 rounded-lg">
+                            <label class="text-xs font-bold text-emerald-900">📅 Seleccionar Día:</label>
+                            <input type="date" id="filtroFechaAtendidos" onchange="renderizarPacientesAtendidos()" class="bg-white border border-emerald-300 rounded px-2 py-1 text-xs font-semibold text-slate-800">
+                        </div>
+                        <button onclick="descargarReportePagosPDF()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow">
+                            📥 Descargar Reporte PDF del Día
+                        </button>
+                    </div>
+                </div>
+
+                <div id="bannerEstadoDiaCaja" class="hidden p-3 rounded-xl border text-xs font-semibold flex items-center gap-2"></div>
+                <div id="resumenTotalesDia" class="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-emerald-50/80 p-4 rounded-xl border border-emerald-200"></div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-700 text-xs sm:text-sm">
+                                <th class="p-3">Fecha / Hora</th>
+                                <th class="p-3">Paciente Atendido</th>
+                                <th class="p-3">Cédula / Teléfono</th>
+                                <th class="p-3">Motivo Consulta</th>
+                                <th class="p-3">Método / Moneda</th>
+                                <th class="p-3 text-right">Monto Recibido</th>
+                                <th class="p-3 text-center">Estado / Pago</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaPacientesAtendidos" class="text-xs sm:text-sm divide-y divide-slate-200">
+                            <tr><td colspan="7" class="p-4 text-center text-slate-500">No hay pacientes atendidos en esta fecha.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 4: BASE DE DATOS -->
+            <div id="seccion-respaldo-bd" class="hidden bg-white rounded-xl shadow p-4 sm:p-6 space-y-6 border border-emerald-200">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-800">🗄️ Base de Datos y Respaldo Local</h3>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
+                        <h4 class="font-bold text-emerald-900 text-sm">📥 Descargar Copia de Seguridad (.json)</h4>
+                        <button onclick="exportarBaseDatosLocal()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded-lg text-xs font-bold shadow-sm">
+                            Descargar Archivo JSON
+                        </button>
+                    </div>
+                    <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
+                        <h4 class="font-bold text-emerald-900 text-sm">📤 Restaurar Base de Datos</h4>
+                        <input type="file" id="inputRestaurarBD" accept=".json" onchange="importarBaseDatosLocal(event)" class="w-full text-xs text-slate-600">
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- MODAL PDF REPORTE DE CAJA -->
+    <div id="contenedorModalPDF" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl max-w-4xl w-full p-6 space-y-4 shadow-2xl my-8">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 id="tituloVistaPreviaPDF" class="font-bold text-lg text-slate-800">Reporte Diario de Pacientes Atendidos y Caja</h3>
+                <button onclick="cerrarModalPDF()" class="text-slate-500 hover:text-red-600 font-bold text-xl">✕</button>
+            </div>
+            <div id="areaImpresionPDF" class="p-6 bg-white border border-slate-300 text-slate-800 space-y-5"></div>
+            <div class="flex flex-wrap justify-end gap-3 pt-2 border-t">
+                <button onclick="cerrarModalPDF()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-sm font-semibold">Cerrar</button>
+                <button onclick="descargarArchivoPDF()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold shadow">⬇️ Descargar PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const N8N_URL_AGENDAR = "https://agentesingenieriadigitalplus-n8n.o9lcit.easypanel.host/webhook/agendar-cita";
+        const N8N_URL_OBTENER_CITAS = "https://agentesingenieriadigitalplus-n8n.o9lcit.easypanel.host/webhook/obtener-citas";
+        const N8N_URL_RECUPERAR_CLAVE = "https://agentesingenieriadigitalplus-n8n.o9lcit.easypanel.host/webhook/recuperar-clave";
+
+        function obtenerFechaHoyISO() {
+            const ahora = new Date();
+            const local = new Date(ahora.getTime() - ahora.getTimezoneOffset() * 60000);
+            return local.toISOString().split('T')[0];
+        }
+
+        function normalizarFechaSheet(valor) {
+            if (!valor) return "";
+            const str = String(valor).trim();
+            if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+            const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+            if (dmy) {
+                return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+            }
+            return str;
+        }
+
+        function actualizarHorasDisponiblesPaciente(fechaSeleccionada) {
+            const selectHoraEl = document.getElementById('hora');
+            const avisoEl = document.getElementById('avisoDiaNoLaborable');
+            if (!selectHoraEl || !fechaSeleccionada) return;
+
+            const horaPrevia = selectHoraEl.value;
+            const cfg = obtenerConfigConsultorio();
+            const [year, month, day] = fechaSeleccionada.split('-').map(Number);
+            const diaSemana = new Date(year, month - 1, day).getDay();
+
+            if (!cfg.diasLaborables.includes(diaSemana)) {
+                if (avisoEl) avisoEl.classList.remove('hidden');
+                selectHoraEl.disabled = true;
+                selectHoraEl.innerHTML = '<option value="">Día no laborable</option>';
+                return;
+            }
+            if (avisoEl) avisoEl.classList.add('hidden');
+
+            const citasLocales = JSON.parse(localStorage.getItem('citas_medicas_os')) || [];
+            const ocupadas = citasLocales
+                .filter(c => c.fecha === fechaSeleccionada)
+                .map(c => String(c.hora || '').trim().toUpperCase());
+
+            selectHoraEl.innerHTML = '<option value="">Selecciona una hora...</option>';
+            let disponiblesCount = 0;
+            cfg.horarios.forEach(h => {
+                const opt = document.createElement('option');
+                opt.value = h;
+                if (ocupadas.includes(String(h).trim().toUpperCase())) {
+                    opt.textContent = `${h} (Ocupada)`;
+                    opt.disabled = true;
+                } else {
+                    opt.textContent = h;
+                    disponiblesCount++;
+                }
+                selectHoraEl.appendChild(opt);
+            });
+
+            if (disponiblesCount === 0) {
+                selectHoraEl.innerHTML = '<option value="">Sin cupos disponibles</option>';
+                selectHoraEl.disabled = true;
+            } else {
+                selectHoraEl.disabled = false;
+                if (horaPrevia && !ocupadas.includes(String(horaPrevia).trim().toUpperCase())) {
+                    selectHoraEl.value = horaPrevia;
+                }
+            }
+        }
+
+        let sincronizandoAhora = false;
+        async function sincronizarDesdeSheets(mostrarAlerta = false) {
+            if (sincronizandoAhora) return;
+            sincronizandoAhora = true;
+            try {
+                const respuesta = await fetch(N8N_URL_OBTENER_CITAS + "?t=" + Date.now(), { cache: "no-store" });
+                if (!respuesta.ok) throw new Error("HTTP " + respuesta.status);
+                const data = await respuesta.json();
+                const filasSheets = Array.isArray(data) ? data : (Array.isArray(data.data) ? data.data : []);
+
+                if (Array.isArray(filasSheets)) {
+                    actualizarEstadoLocalYUI(filasSheets);
+                    if (mostrarAlerta) {
+                        Swal.fire({
+                            toast: true,
+                            position: 'top-end',
+                            icon: 'success',
+                            title: 'Agenda sincronizada con Google Sheets',
+                            showConfirmButton: false,
+                            timer: 2000
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error("Error sincronizando citas:", error);
+                if (mostrarAlerta) {
+                    Swal.fire({
+                        toast: true,
+                        position: 'top-end',
+                        icon: 'error',
+                        title: 'No se pudo conectar con n8n / Sheets',
+                        showConfirmButton: false,
+                        timer: 2500
+                    });
+                }
+            } finally {
+                sincronizandoAhora = false;
+            }
+        }
+
+        async function sincronizarManualAdmin() {
+            const btn = document.getElementById('btnSincronizarAdmin');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="loader"></span> Sincronizando...';
+            }
+            await sincronizarDesdeSheets(true);
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '🔄 Sincronizar';
+            }
+        }
+
+        function actualizarEstadoLocalYUI(filasSheets) {
+            const cfg = obtenerConfigConsultorio();
+            const citasPrevias = JSON.parse(localStorage.getItem('citas_medicas_os')) || [];
+            const atendidos = JSON.parse(localStorage.getItem('pacientes_atendidos_os')) || [];
+
+            const citasDesdeSheets = filasSheets
+                .filter(fila => {
+                    const estado = String(fila.ESTADO || fila.estado || '').trim().toLowerCase();
+                    const fecha = normalizarFechaSheet(fila.DIA || fila.FECHA || fila.fecha || '');
+                    const hora = String(fila.HORA || fila.hora || '').trim();
+                    const nombre = String(fila['NOMBRE PACIENTE'] || fila.NOMBRE || fila.nombre || '').trim();
+                    return fecha && hora && (estado === 'ocupado' || nombre.length > 0);
+                })
+                .map((fila, idx) => {
+                    const fecha = normalizarFechaSheet(fila.DIA || fila.FECHA || fila.fecha || '');
+                    const hora = String(fila.HORA || fila.hora || '').trim();
+                    const nombre = String(fila['NOMBRE PACIENTE'] || fila.NOMBRE || fila.nombre || 'Paciente').trim();
+                    const cedula = String(fila.CEDULA || fila.cedula || '').trim();
+                    const edad = fila.EDAD || fila.edad || '';
+                    const sexo = String(fila.SEXO || fila.sexo || '').trim();
+                    let telefono = String(fila.TELEFONO || fila.telefono || '').trim();
+                    if (telefono && !telefono.startsWith('+') && /^\d{10,15}$/.test(telefono)) {
+                        telefono = '+' + telefono;
+                    }
+
+                    const previa = citasPrevias.find(c =>
+                        c.fecha === fecha &&
+                        String(c.hora || '').trim().toUpperCase() === hora.toUpperCase()
+                    );
+
+                    return {
+                        id: previa?.id || fila.ID || fila.id || `SHEET-${fecha}-${hora}-${idx}`,
+                        nombre,
+                        cedula,
+                        edad,
+                        sexo,
+                        telefono,
+                        sintomatologia: previa?.sintomatologia || fila.SINTOMATOLOGIA || fila.MOTIVO || fila.sintomatologia || 'Consulta médica agendada',
+                        fecha,
+                        hora,
+                        medico: previa?.medico || cfg.medico,
+                        direccion: previa?.direccion || cfg.direccion
+                    };
+                })
+                .filter(c => {
+                    // Excluir citas ya marcadas como atendidas hoy
+                    return !atendidos.some(a =>
+                        a.fechaAtencion === c.fecha &&
+                        String(a.horaCita || '').trim().toUpperCase() === c.hora.toUpperCase() &&
+                        String(a.nombre || '').trim().toLowerCase() === c.nombre.toLowerCase()
+                    );
+                });
+
+            localStorage.setItem('citas_medicas_os', JSON.stringify(citasDesdeSheets));
+            citasCacheAdmin = citasDesdeSheets;
+
+            const vistaMedico = document.getElementById('vista-medico');
+            if (vistaMedico && !vistaMedico.classList.contains('hidden')) {
+                renderizarCalendario();
+                renderizarTablaCitas(citasCacheAdmin);
+            }
+
+            const vistaPaciente = document.getElementById('vista-paciente');
+            const fechaPacienteEl = document.getElementById('fecha');
+            if (vistaPaciente && !vistaPaciente.classList.contains('hidden') && fechaPacienteEl && fechaPacienteEl.value) {
+                actualizarHorasDisponiblesPaciente(fechaPacienteEl.value);
+            }
+        }
+ 
+        // ==========================================
+        // GESTIÓN DE USUARIOS Y CONTRASEÑAS
+        // ==========================================
+        function obtenerUsuariosAdmin() {
+            const usuarios = JSON.parse(localStorage.getItem('usuarios_admin_os'));
+            if (!usuarios || usuarios.length === 0) {
+                const defaultUsers = [{ usuario: 'admin', clave: '1234', telefono: '+584120000000' }];
+                localStorage.setItem('usuarios_admin_os', JSON.stringify(defaultUsers));
+                return defaultUsers;
+            }
+            return usuarios;
+        }
+
+        function renderizarTablaUsuarios() {
+            const usuarios = obtenerUsuariosAdmin();
+            const tbody = document.getElementById('tablaUsuariosAdmin');
+            tbody.innerHTML = '';
+            usuarios.forEach((u, index) => {
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-2.5 font-bold text-slate-800">${u.usuario}</td>
+                        <td class="p-2.5 text-slate-600 font-mono">${u.telefono}</td>
+                        <td class="p-2.5 text-slate-500">••••••</td>
+                        <td class="p-2.5 text-center">
+                            <div class="flex justify-center gap-1.5">
+                                <button type="button" onclick="editarUsuarioAdmin(${index})" class="bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded text-[11px] font-semibold">Editar</button>
+                                ${usuarios.length > 1 ? `<button type="button" onclick="eliminarUsuarioAdmin(${index})" class="bg-red-600 hover:bg-red-700 text-white px-2.5 py-1 rounded text-[11px] font-semibold">Eliminar</button>` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        document.getElementById('formNuevoUsuario').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const usuario = document.getElementById('newUserLogin').value.trim();
+            const clave = document.getElementById('newUserPass').value.trim();
+            const telefono = document.getElementById('newUserPhone').value.trim();
+
+            const usuarios = obtenerUsuariosAdmin();
+            if (usuarios.some(u => u.usuario.toLowerCase() === usuario.toLowerCase())) {
+                return Swal.fire('Usuario existente', 'Ya existe un usuario con ese nombre.', 'warning');
+            }
+
+            usuarios.push({ usuario, clave, telefono });
+            localStorage.setItem('usuarios_admin_os', JSON.stringify(usuarios));
+            sincronizarIndexedDB();
+            renderizarTablaUsuarios();
+            document.getElementById('formNuevoUsuario').reset();
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Usuario creado con éxito', showConfirmButton: false, timer: 2000 });
+        });
+
+        function editarUsuarioAdmin(index) {
+            const usuarios = obtenerUsuariosAdmin();
+            const u = usuarios[index];
+            Swal.fire({
+                title: `✏️ Editar Usuario: ${u.usuario}`,
+                html: `
+                    <div class="space-y-3 text-left text-sm">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Nombre de Usuario *</label>
+                            <input id="editUsrName" class="w-full p-2 border rounded" value="${u.usuario}">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Nueva Contraseña *</label>
+                            <input id="editUsrPass" type="text" class="w-full p-2 border rounded" value="${u.clave}">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Teléfono WhatsApp *</label>
+                            <input id="editUsrPhone" class="w-full p-2 border rounded" value="${u.telefono}">
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: 'Guardar Cambios',
+                confirmButtonColor: '#059669',
+                showCancelButton: true,
+                preConfirm: () => {
+                    const usuario = document.getElementById('editUsrName').value.trim();
+                    const clave = document.getElementById('editUsrPass').value.trim();
+                    const telefono = document.getElementById('editUsrPhone').value.trim();
+                    if (!usuario || !clave || !telefono) {
+                        Swal.showValidationMessage('Todos los campos son obligatorios.');
+                        return false;
+                    }
+                    return { usuario, clave, telefono };
+                }
+            }).then(res => {
+                if (!res.isConfirmed) return;
+                usuarios[index] = res.value;
+                localStorage.setItem('usuarios_admin_os', JSON.stringify(usuarios));
+                sincronizarIndexedDB();
+                renderizarTablaUsuarios();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Usuario actualizado', showConfirmButton: false, timer: 2000 });
+            });
+        }
+
+        function eliminarUsuarioAdmin(index) {
+            const usuarios = obtenerUsuariosAdmin();
+            if (usuarios.length <= 1) {
+                return Swal.fire('Acción no permitida', 'Debe existir al menos un usuario administrador.', 'warning');
+            }
+            Swal.fire({
+                title: '¿Eliminar usuario?',
+                text: `Se revocará el acceso a ${usuarios[index].usuario}.`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc2626',
+                confirmButtonText: 'Sí, eliminar'
+            }).then(res => {
+                if (!res.isConfirmed) return;
+                usuarios.splice(index, 1);
+                localStorage.setItem('usuarios_admin_os', JSON.stringify(usuarios));
+                sincronizarIndexedDB();
+                renderizarTablaUsuarios();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Usuario eliminado', showConfirmButton: false, timer: 2000 });
+            });
+        }
+
+        // ==========================================
+        // RECUPERACIÓN DE CONTRASEÑA POR WHATSAPP
+        // ==========================================
+        function iniciarRecuperacionContrasena() {
+            Swal.fire({
+                title: '🔑 Recuperar Contraseña',
+                html: `
+                    <p class="text-xs text-slate-600 mb-3">Ingresa tu nombre de usuario registrado para enviarte un código de verificación a tu WhatsApp asociado.</p>
+                    <input id="recupUsuarioInput" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Nombre de usuario (Ej: admin)">
+                `,
+                confirmButtonText: 'Enviar Código por WhatsApp',
+                confirmButtonColor: '#059669',
+                showCancelButton: true,
+                cancelButtonText: 'Cancelar',
+                preConfirm: () => {
+                    const userInput = document.getElementById('recupUsuarioInput').value.trim();
+                    if (!userInput) {
+                        Swal.showValidationMessage('Ingresa tu usuario.');
+                        return false;
+                    }
+                    const usuarios = obtenerUsuariosAdmin();
+                    const foundIndex = usuarios.findIndex(u => u.usuario.toLowerCase() === userInput.toLowerCase());
+                    if (foundIndex === -1) {
+                        Swal.showValidationMessage('No se encontró ningún usuario registrado con ese nombre.');
+                        return false;
+                    }
+                    return { user: usuarios[foundIndex], index: foundIndex };
+                }
+            }).then(async (res) => {
+                if (!res.isConfirmed) return;
+
+                const { user, index } = res.value;
+                const codigoOTP = Math.floor(100000 + Math.random() * 900000).toString();
+                const telLimpio = user.telefono.replace(/[^0-9]/g, '');
+                const telOculto = user.telefono.slice(0, 5) + '****' + user.telefono.slice(-3);
+
+                // 1. Intentar envío automático vía webhook de n8n
+                try {
+                    await fetch(N8N_URL_RECUPERAR_CLAVE, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            usuario: user.usuario,
+                            telefono: user.telefono,
+                            codigo: codigoOTP,
+                            mensaje: `🔐 *Recuperación de Contraseña - Asistente Médico OS*\n\nHola *${user.usuario}*, tu código de verificación para restablecer tu contraseña es: *${codigoOTP}*`
+                        })
+                    });
+                } catch (e) {}
+
+                // 2. Modal para ingresar el código recibido y establecer nueva contraseña
+                const mensajeWA = `🔐 *Asistente Médico OS*\nCódigo de recuperación para *${user.usuario}*: *${codigoOTP}*`;
+                const linkWA = `https://wa.me/${telLimpio}?text=${encodeURIComponent(mensajeWA)}`;
+
+                Swal.fire({
+                    title: '📲 Verificación de Seguridad',
+                    html: `
+                        <div class="text-left text-xs space-y-3">
+                            <p class="text-slate-600">Hemos enviado un código de verificación de 6 dígitos al número registrado: <b>${telOculto}</b>.</p>
+                            <div class="bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg text-center">
+                                <a href="${linkWA}" target="_blank" class="text-emerald-700 font-bold underline">👉 Haz clic aquí si deseas recibir/abrir el código directamente en WhatsApp</a>
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Código de 6 dígitos *</label>
+                                <input id="otpInput" maxlength="6" class="w-full p-2 border rounded text-center font-mono text-base tracking-widest" placeholder="000000">
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Nueva Contraseña *</label>
+                                <input id="newPassRecupInput" type="password" class="w-full p-2 border rounded text-sm" placeholder="Ingresa tu nueva contraseña">
+                            </div>
+                        </div>
+                    `,
+                    confirmButtonText: 'Restablecer Contraseña',
+                    confirmButtonColor: '#059669',
+                    showCancelButton: true,
+                    preConfirm: () => {
+                        const codeVal = document.getElementById('otpInput').value.trim();
+                        const newPassVal = document.getElementById('newPassRecupInput').value.trim();
+                        if (codeVal !== codigoOTP) {
+                            Swal.showValidationMessage('El código ingresado es incorrecto.');
+                            return false;
+                        }
+                        if (!newPassVal || newPassVal.length < 4) {
+                            Swal.showValidationMessage('La nueva contraseña debe tener al menos 4 caracteres.');
+                            return false;
+                        }
+                        return newPassVal;
+                    }
+                }).then(finalRes => {
+                    if (!finalRes.isConfirmed) return;
+                    const usuarios = obtenerUsuariosAdmin();
+                    usuarios[index].clave = finalRes.value;
+                    localStorage.setItem('usuarios_admin_os', JSON.stringify(usuarios));
+                    sincronizarIndexedDB();
+                    Swal.fire('¡Contraseña Actualizada!', 'Ya puedes iniciar sesión con tu nueva contraseña.', 'success');
+                });
+            });
+        }
+
+        // ==========================================
+        // INDEXED DB Y CONFIGURACIÓN
+        // ==========================================
+        let dbInterna = null;
+        const requestDB = indexedDB.open("AsistenteMedicoDB", 1);
+        requestDB.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains("respaldos")) db.createObjectStore("respaldos", { keyPath: "clave" });
+        };
+        requestDB.onsuccess = (e) => { dbInterna = e.target.result; sincronizarIndexedDB(); };
+
+        function sincronizarIndexedDB() {
+            if (!dbInterna) return;
+            try {
+                const tx = dbInterna.transaction("respaldos", "readwrite");
+                tx.objectStore("respaldos").put({
+                    clave: "backup_completo",
+                    fecha: new Date().toISOString(),
+                    citas: JSON.parse(localStorage.getItem('citas_medicas_os')) || [],
+                    atendidos: JSON.parse(localStorage.getItem('pacientes_atendidos_os')) || [],
+                    historialAsistencias: JSON.parse(localStorage.getItem('historial_asistencias_os')) || {},
+                    usuarios: obtenerUsuariosAdmin(),
+                    config: obtenerConfigConsultorio()
+                });
+            } catch (err) {}
+        }
+
+        function obtenerUrlPublicaPaciente() { return window.location.href.split('?')[0].split('#')[0] + "?portal=paciente"; }
+        
+        function copiarLinkPaciente() {
+            const link = obtenerUrlPublicaPaciente();
+            navigator.clipboard.writeText(link).then(() => {
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Link de pacientes copiado', showConfirmButton: false, timer: 2000 });
+            });
+        }
+
+        function compartirLinkPacienteWhatsApp() {
+            const cfg = obtenerConfigConsultorio();
+            const url = obtenerUrlPublicaPaciente();
+            const mensaje = `🩺 *${cfg.medico}*\nPuedes agendar tu cita médica ingresando al siguiente enlace:\n👉 ${url}`;
+            window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
+        }
+
+        function obtenerConfigConsultorio() {
+            return JSON.parse(localStorage.getItem('config_consultorio_os')) || {
+                medico: "Consultorio Médico",
+                direccion: "Centro Clínico Principal",
+                diasLaborables: [1, 2, 3, 4, 5],
+                horarios: ["08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "02:00 PM", "03:00 PM", "04:00 PM"]
+            };
+        }
+
+        function cargarFormularioConfig() {
+            const cfg = obtenerConfigConsultorio();
+            document.getElementById('cfgMedico').value = cfg.medico || "";
+            document.getElementById('cfgDireccion').value = cfg.direccion || "";
+            document.getElementById('cfgHorarios').value = cfg.horarios.join(', ');
+            document.getElementById('inputLinkPublicoPaciente').value = obtenerUrlPublicaPaciente();
+            document.getElementById('subtituloConsultorioPaciente').textContent = `${cfg.medico} • ${cfg.direccion}`;
+
+            document.querySelectorAll('.dia-check').forEach(chk => {
+                chk.checked = cfg.diasLaborables.includes(parseInt(chk.value));
+            });
+            renderizarTablaUsuarios();
+        }
+
+        document.getElementById('formConfigConsultorio').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const dias = [];
+            document.querySelectorAll('.dia-check:checked').forEach(chk => dias.push(parseInt(chk.value)));
+            const horariosArray = document.getElementById('cfgHorarios').value.split(',').map(h => h.trim()).filter(h => h.length > 0);
+
+            if (dias.length === 0 || horariosArray.length === 0) {
+                return Swal.fire('Atención', 'Selecciona al menos un día laborable y un bloque horario.', 'warning');
+            }
+
+            const nuevaConfig = {
+                medico: document.getElementById('cfgMedico').value.trim(),
+                direccion: document.getElementById('cfgDireccion').value.trim(),
+                diasLaborables: dias,
+                horarios: horariosArray
+            };
+            localStorage.setItem('config_consultorio_os', JSON.stringify(nuevaConfig));
+            sincronizarIndexedDB();
+            cargarFormularioConfig();
+            renderizarCalendario();
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Agenda configurada', showConfirmButton: false, timer: 2000 });
+        });
+
+        // ==========================================
+        // LOGIN / CONTROL DE ACCESO (SESIÓN PERSISTENTE)
+        // ==========================================
+        function activarVistaAdmin(nombreUsuario) {
+            document.getElementById('vista-login').classList.add('hidden');
+            document.getElementById('vista-paciente').classList.add('hidden');
+            document.getElementById('vista-medico').classList.remove('hidden');
+            document.getElementById('headerAdmin').classList.remove('hidden');
+            document.getElementById('usuarioActivoLabel').textContent = `Sesión activa: ${nombreUsuario}`;
+            cargarCitasAdmin();
+            cargarFormularioConfig();
+            document.getElementById('filtroFechaAtendidos').value = obtenerFechaHoyISO();
+            renderizarPacientesAtendidos();
+            sincronizarDesdeSheets(false);
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const uInput = document.getElementById('loginUsuario').value.trim();
+            const pInput = document.getElementById('loginClave').value.trim();
+
+            const usuarios = obtenerUsuariosAdmin();
+            const usuarioValido = usuarios.find(u => u.usuario.toLowerCase() === uInput.toLowerCase() && u.clave === pInput);
+
+            if (usuarioValido) {
+                localStorage.setItem('sesion_admin_activa_os', JSON.stringify({
+                    usuario: usuarioValido.usuario,
+                    inicio: Date.now()
+                }));
+                activarVistaAdmin(usuarioValido.usuario);
+            } else {
+                Swal.fire('Acceso Denegado', 'Usuario o contraseña incorrectos.', 'error');
+            }
+        });
+
+        function cerrarSesionAdmin() {
+            localStorage.removeItem('sesion_admin_activa_os');
+            document.getElementById('vista-medico').classList.add('hidden');
+            document.getElementById('headerAdmin').classList.add('hidden');
+            document.getElementById('vista-login').classList.remove('hidden');
+            document.getElementById('loginForm').reset();
+        }
+
+        // ==========================================
+        // PORTAL DEL PACIENTE
+        // ==========================================
+        const inputFecha = document.getElementById('fecha');
+        const selectHora = document.getElementById('hora');
+        inputFecha.setAttribute('min', obtenerFechaHoyISO());
+
+        inputFecha.addEventListener('change', async (e) => {
+            const fechaSeleccionada = e.target.value;
+            if (!fechaSeleccionada) return;
+            const loadingHoras = document.getElementById('loadingHoras');
+            if (loadingHoras) loadingHoras.classList.remove('hidden');
+            await sincronizarDesdeSheets(false);
+            if (loadingHoras) loadingHoras.classList.add('hidden');
+            actualizarHorasDisponiblesPaciente(fechaSeleccionada);
+        });
+
+        document.getElementById('citaForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const cfg = obtenerConfigConsultorio();
+            const telefonoCompleto = `${document.getElementById('codigoPais').value}${document.getElementById('telefono').value.trim().replace(/^0+/, '')}`;
+
+            const payload = {
+                id: 'CITA-' + Date.now(),
+                nombre: document.getElementById('nombre').value.trim(),
+                cedula: document.getElementById('cedula').value.trim(),
+                edad: parseInt(document.getElementById('edad').value),
+                sexo: document.getElementById('sexo').value,
+                telefono: telefonoCompleto,
+                sintomatologia: document.getElementById('sintomatologia').value.trim(),
+                fecha: inputFecha.value,
+                hora: selectHora.value,
+                medico: cfg.medico,
+                direccion: cfg.direccion
+            };
+
+            const citas = JSON.parse(localStorage.getItem('citas_medicas_os')) || [];
+            citas.push(payload);
+            localStorage.setItem('citas_medicas_os', JSON.stringify(citas));
+            sincronizarIndexedDB();
+
+            try {
+                await fetch(N8N_URL_AGENDAR, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            } catch (err) {}
+
+            Swal.fire({
+                icon: 'success',
+                title: '¡Tu cita ha sido agendada con éxito!',
+                text: 'Se han enviado los detalles de tu confirmación a tu WhatsApp.',
+                confirmButtonColor: '#059669'
+            });
+
+            document.getElementById('citaForm').reset();
+            selectHora.disabled = true;
+            selectHora.innerHTML = '<option value="">Elige fecha...</option>';
+        });
+
+        // ==========================================
+        // CALENDARIO Y CITAS ADMIN
+        // ==========================================
+        let modoCalendario = 'semana';
+        let fechaReferenciaCalendario = new Date();
+        let citasCacheAdmin = [];
+
+        function cambiarModoCalendario(modo) {
+            modoCalendario = modo;
+            document.getElementById('btnModoSemana').className = modo === 'semana' ? "px-3 py-1 rounded-md bg-white text-emerald-700 shadow-sm" : "px-3 py-1 rounded-md text-slate-600 hover:text-slate-900";
+            document.getElementById('btnModoMes').className = modo === 'mes' ? "px-3 py-1 rounded-md bg-white text-emerald-700 shadow-sm" : "px-3 py-1 rounded-md text-slate-600 hover:text-slate-900";
+            renderizarCalendario();
+        }
+
+        function navegarCalendario(dir) {
+            if (modoCalendario === 'mes') fechaReferenciaCalendario.setMonth(fechaReferenciaCalendario.getMonth() + dir);
+            else fechaReferenciaCalendario.setDate(fechaReferenciaCalendario.getDate() + (dir * 7));
+            renderizarCalendario();
+        }
+
+        function cargarCitasAdmin() {
+            citasCacheAdmin = JSON.parse(localStorage.getItem('citas_medicas_os')) || [];
+            renderizarCalendario();
+            renderizarTablaCitas(citasCacheAdmin);
+        }
+
+        function renderizarCalendario() {
+            const grid = document.getElementById('gridCalendario');
+            const titulo = document.getElementById('tituloPeriodoCalendario');
+            const cfg = obtenerConfigConsultorio();
+            grid.innerHTML = '';
+
+            const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+            const year = fechaReferenciaCalendario.getFullYear();
+            const month = fechaReferenciaCalendario.getMonth();
+
+            let diasMostrar = [];
+            if (modoCalendario === 'mes') {
+                titulo.textContent = `${meses[month]} ${year}`;
+                const primerDiaMes = new Date(year, month, 1);
+                const inicioCuadricula = new Date(primerDiaMes);
+                inicioCuadricula.setDate(primerDiaMes.getDate() - primerDiaMes.getDay());
+                for (let i = 0; i < 35; i++) {
+                    const d = new Date(inicioCuadricula);
+                    d.setDate(inicioCuadricula.getDate() + i);
+                    diasMostrar.push({ fecha: d, esMesActual: d.getMonth() === month });
+                }
+            } else {
+                const inicioSemana = new Date(fechaReferenciaCalendario);
+                inicioSemana.setDate(fechaReferenciaCalendario.getDate() - fechaReferenciaCalendario.getDay());
+                const finSemana = new Date(inicioSemana);
+                finSemana.setDate(inicioSemana.getDate() + 6);
+                titulo.textContent = `Semana del ${inicioSemana.getDate()} ${meses[inicioSemana.getMonth()]} al ${finSemana.getDate()} ${meses[finSemana.getMonth()]} ${year}`;
+                for (let i = 0; i < 7; i++) {
+                    const d = new Date(inicioSemana);
+                    d.setDate(inicioSemana.getDate() + i);
+                    diasMostrar.push({ fecha: d, esMesActual: true });
+                }
+            }
+
+            diasMostrar.forEach(item => {
+                const f = item.fecha;
+                const isoFecha = `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`;
+                const esLaborable = cfg.diasLaborables.includes(f.getDay());
+                const citasDia = citasCacheAdmin.filter(c => c.fecha === isoFecha);
+                let badges = citasDia.map(c => `<div class="mt-1 px-1.5 py-0.5 bg-emerald-100 text-emerald-900 rounded text-[10px] font-semibold truncate">${c.hora} - ${c.nombre}</div>`).join('');
+
+                grid.innerHTML += `
+                    <div class="dia-calendario p-1.5 border rounded-lg ${item.esMesActual ? (esLaborable ? 'bg-white' : 'bg-slate-100') : 'bg-slate-50 opacity-40'}">
+                        <div class="flex justify-between items-center"><span class="text-xs font-bold">${f.getDate()}</span></div>
+                        <div class="mt-1">${badges}</div>
+                    </div>
+                `;
+            });
+        }
+
+        function renderizarTablaCitas(citas) {
+            const tbody = document.getElementById('tablaCitasAdmin');
+            if (citas.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-slate-500">No hay citas agendadas pendientes.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = '';
+            citas.forEach((c, index) => {
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-3 whitespace-nowrap">${c.fecha}</td>
+                        <td class="p-3 text-emerald-700 font-bold whitespace-nowrap">${c.hora}</td>
+                        <td class="p-3 font-semibold">${c.nombre}</td>
+                        <td class="p-3 text-xs"><b>${c.cedula}</b><br>${c.edad || 'N/D'} años • ${c.sexo || 'N/D'}</td>
+                        <td class="p-3 text-xs whitespace-nowrap">${c.telefono}</td>
+                        <td class="p-3 text-xs truncate max-w-xs">${c.sintomatologia || ''}</td>
+                        <td class="p-3 text-center">
+                            <div class="flex justify-center gap-1">
+                                <button onclick="atenderPaciente(${index})" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded text-xs font-semibold shadow-sm">Atender</button>
+                                <button onclick="editarCita(${index})" class="bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded text-xs font-semibold">Editar</button>
+                                <button onclick="borrarCita(${index})" class="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-xs font-semibold">Borrar</button>
+                            </div>
+                        </td>
+                    </tr>`;
+            });
+        }
+
+        // ==========================================
+        // CITA MANUAL ADMIN
+        // ==========================================
+        function actualizarHorasModalAdmin(fechaSeleccionada) {
+            const selectHoraModal = document.getElementById('admHora');
+            const avisoModal = document.getElementById('admAvisoDia');
+            if (!fechaSeleccionada) return;
+
+            const cfg = obtenerConfigConsultorio();
+            const [year, month, day] = fechaSeleccionada.split('-').map(Number);
+            const diaSemana = new Date(year, month - 1, day).getDay();
+
+            if (!cfg.diasLaborables.includes(diaSemana)) {
+                avisoModal.classList.remove('hidden');
+                selectHoraModal.disabled = true;
+                selectHoraModal.innerHTML = '<option value="">Día no laborable</option>';
+                return;
+            }
+            avisoModal.classList.add('hidden');
+
+            const citasLocales = JSON.parse(localStorage.getItem('citas_medicas_os')) || [];
+            const ocupadas = citasLocales.filter(c => c.fecha === fechaSeleccionada).map(c => c.hora);
+
+            selectHoraModal.innerHTML = '<option value="">Selecciona una hora...</option>';
+            let disponibles = 0;
+            cfg.horarios.forEach(h => {
+                const opt = document.createElement('option');
+                opt.value = h;
+                if (ocupadas.includes(h)) {
+                    opt.textContent = `${h} (Ocupada)`;
+                    opt.disabled = true;
+                } else {
+                    opt.textContent = h;
+                    disponibles++;
+                }
+                selectHoraModal.appendChild(opt);
+            });
+
+            if (disponibles === 0) {
+                selectHoraModal.innerHTML = '<option value="">Sin cupos disponibles</option>';
+                selectHoraModal.disabled = true;
+            } else {
+                selectHoraModal.disabled = false;
+            }
+        }
+
+        function abrirModalAgendarAdmin() {
+            const hoyISO = obtenerFechaHoyISO();
+            Swal.fire({
+                title: '➕ Agendar Cita Manual',
+                width: '550px',
+                html: `
+                    <div class="space-y-3 text-left text-sm pt-2">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Nombre y Apellido *</label>
+                            <input id="admNombre" class="w-full px-3 py-2 border border-slate-300 rounded-lg" placeholder="Ej: Carlos Silva">
+                        </div>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Cédula / ID *</label>
+                                <input id="admCedula" class="w-full px-3 py-2 border border-slate-300 rounded-lg" placeholder="Ej: V-15234567">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Edad *</label>
+                                <input id="admEdad" type="number" min="0" max="120" class="w-full px-3 py-2 border border-slate-300 rounded-lg" placeholder="Ej: 40">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Sexo *</label>
+                                <select id="admSexo" class="w-full px-2 py-2 border border-slate-300 rounded-lg bg-white">
+                                    <option value="Femenino">Femenino</option>
+                                    <option value="Masculino">Masculino</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Teléfono (WhatsApp) *</label>
+                            <div class="flex gap-2">
+                                <select id="admCodigoPais" class="w-2/5 px-2 py-2 border border-slate-300 rounded-lg bg-slate-50">
+                                    <option value="+58">🇻🇪 +58 (VE)</option>
+                                    <option value="+57">🇨🇴 +57 (CO)</option>
+                                    <option value="+1">🇺🇸 +1 (US)</option>
+                                    <option value="+34">🇪🇸 +34 (ES)</option>
+                                    <option value="+54">🇦🇷 +54 (AR)</option>
+                                    <option value="+56">🇨🇱 +56 (CL)</option>
+                                    <option value="+51">🇵🇪 +51 (PE)</option>
+                                    <option value="+593">🇪🇨 +593 (EC)</option>
+                                    <option value="+507">🇵🇦 +507 (PA)</option>
+                                    <option value="+52">🇲🇽 +52 (MX)</option>
+                                </select>
+                                <input id="admTelefono" type="tel" class="w-3/5 px-3 py-2 border border-slate-300 rounded-lg" placeholder="4121234567">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Motivo de la Consulta / Diagnóstico *</label>
+                            <textarea id="admMotivo" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg" placeholder="Motivo de la consulta..."></textarea>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 pt-1">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Fecha de la Cita *</label>
+                                <input id="admFecha" type="date" min="${hoyISO}" onchange="actualizarHorasModalAdmin(this.value)" class="w-full px-3 py-2 border border-slate-300 rounded-lg">
+                                <p id="admAvisoDia" class="hidden text-[11px] text-red-600 mt-1 font-semibold">⚠️ Día no laborable.</p>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Hora Disponible *</label>
+                                <select id="admHora" disabled class="w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50">
+                                    <option value="">Elige fecha...</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: 'Confirmar y Agendar Cita',
+                confirmButtonColor: '#059669',
+                showCancelButton: true,
+                cancelButtonText: 'Cancelar',
+                preConfirm: () => {
+                    const nombre = document.getElementById('admNombre').value.trim();
+                    const cedula = document.getElementById('admCedula').value.trim();
+                    const edad = parseInt(document.getElementById('admEdad').value);
+                    const sexo = document.getElementById('admSexo').value;
+                    const cod = document.getElementById('admCodigoPais').value;
+                    const tel = document.getElementById('admTelefono').value.trim().replace(/^0+/, '');
+                    const sintomatologia = document.getElementById('admMotivo').value.trim();
+                    const fecha = document.getElementById('admFecha').value;
+                    const hora = document.getElementById('admHora').value;
+
+                    if (!nombre || !cedula || !edad || !tel || !sintomatologia || !fecha || !hora) {
+                        Swal.showValidationMessage('Por favor completa todos los campos obligatorios.');
+                        return false;
+                    }
+
+                    const cfg = obtenerConfigConsultorio();
+                    return {
+                        id: 'CITA-' + Date.now(),
+                        nombre, cedula, edad, sexo,
+                        telefono: `${cod}${tel}`,
+                        sintomatologia, fecha, hora,
+                        medico: cfg.medico,
+                        direccion: cfg.direccion
+                    };
+                }
+            }).then(async (res) => {
+                if (!res.isConfirmed) return;
+                citasCacheAdmin.push(res.value);
+                localStorage.setItem('citas_medicas_os', JSON.stringify(citasCacheAdmin));
+                sincronizarIndexedDB();
+                cargarCitasAdmin();
+
+                try {
+                    await fetch(N8N_URL_AGENDAR, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(res.value)
+                    });
+                } catch (err) {}
+
+                Swal.fire({
+                    icon: 'success',
+                    title: '¡Tu cita ha sido agendada con éxito!',
+                    text: 'Se han enviado los detalles de tu confirmación a tu WhatsApp.',
+                    confirmButtonColor: '#059669'
+                });
+            });
+        }
+
+        function editarCita(index) {
+            const c = citasCacheAdmin[index];
+            Swal.fire({
+                title: '✏️ Editar Cita',
+                html: `
+                    <div class="space-y-2 text-left text-sm">
+                        <input id="editNombre" class="w-full p-2 border rounded" value="${c.nombre}" placeholder="Nombre">
+                        <input id="editCedula" class="w-full p-2 border rounded" value="${c.cedula}" placeholder="Cédula">
+                        <input id="editTelefono" class="w-full p-2 border rounded" value="${c.telefono}" placeholder="Teléfono">
+                        <input id="editFecha" type="date" class="w-full p-2 border rounded" value="${c.fecha}">
+                        <input id="editHora" class="w-full p-2 border rounded" value="${c.hora}" placeholder="Hora">
+                    </div>
+                `,
+                confirmButtonText: 'Actualizar',
+                confirmButtonColor: '#d97706',
+                showCancelButton: true,
+                preConfirm: () => {
+                    return {
+                        ...c,
+                        nombre: document.getElementById('editNombre').value.trim(),
+                        cedula: document.getElementById('editCedula').value.trim(),
+                        telefono: document.getElementById('editTelefono').value.trim(),
+                        fecha: document.getElementById('editFecha').value,
+                        hora: document.getElementById('editHora').value.trim()
+                    };
+                }
+            }).then(res => {
+                if (!res.isConfirmed) return;
+                citasCacheAdmin[index] = res.value;
+                localStorage.setItem('citas_medicas_os', JSON.stringify(citasCacheAdmin));
+                sincronizarIndexedDB();
+                cargarCitasAdmin();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Cita actualizada', showConfirmButton: false, timer: 2000 });
+            });
+        }
+
+        function borrarCita(index) {
+            Swal.fire({
+                title: '¿Borrar cita?',
+                text: 'Esta acción eliminará la cita de la agenda pendiente.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc2626',
+                confirmButtonText: 'Sí, borrar'
+            }).then(res => {
+                if (!res.isConfirmed) return;
+                citasCacheAdmin.splice(index, 1);
+                localStorage.setItem('citas_medicas_os', JSON.stringify(citasCacheAdmin));
+                sincronizarIndexedDB();
+                cargarCitasAdmin();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Cita eliminada', showConfirmButton: false, timer: 2000 });
+            });
+        }
+
+        // ==========================================
+        // ATENDER PACIENTE -> PASA A CAJA E HISTORIAL
+        // ==========================================
+        function atenderPaciente(index) {
+            const cita = citasCacheAdmin[index];
+            if (!cita) return;
+
+            Swal.fire({
+                title: `✅ Atender a ${cita.nombre}`,
+                html: `
+                    <div class="text-left text-sm space-y-3">
+                        <p class="text-slate-600 text-xs">Al confirmar la atención, el paciente pasará a la lista de <b>Pacientes Atendidos y Caja</b> y se sumará a su <b>Historial de Asistencias</b>.</p>
+                        <div class="bg-emerald-50 p-3 rounded-lg border border-emerald-200 space-y-2">
+                            <label class="block text-xs font-bold text-emerald-900">Método de Pago / Moneda Recibida:</label>
+                            <select id="atenderMetodoPago" class="w-full p-2 border rounded bg-white text-sm">
+                                <option value="Sin pago registrado">⏳ Sin pago registrado (Pendiente en caja)</option>
+                                <option value="Dólares ($)">💵 Dólares ($)</option>
+                                <option value="Euros (€)">💶 Euros (€)</option>
+                                <option value="Pago Móvil / Transferencia">📱 Pago Móvil / Transferencia</option>
+                                <option value="Zelle">🌐 Zelle</option>
+                                <option value="Punto de Venta / Tarjeta">💳 Punto de Venta / Tarjeta</option>
+                            </select>
+                            <div>
+                                <label class="block text-xs font-bold text-emerald-900 mb-1">Monto Recibido (0 si no ha pagado):</label>
+                                <input id="atenderMontoPago" type="number" step="0.01" min="0" value="0" class="w-full p-2 border rounded bg-white text-sm">
+                            </div>
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: 'Confirmar Atención y Registrar',
+                confirmButtonColor: '#059669',
+                showCancelButton: true,
+                cancelButtonText: 'Cancelar',
+                preConfirm: () => {
+                    const metodo = document.getElementById('atenderMetodoPago').value;
+                    const monto = parseFloat(document.getElementById('atenderMontoPago').value) || 0;
+                    if (metodo !== 'Sin pago registrado' && monto <= 0) {
+                        Swal.showValidationMessage('Si seleccionas un método de pago, debes ingresar un monto mayor a 0.');
+                        return false;
+                    }
+                    return { metodo, monto };
+                }
+            }).then(res => {
+                if (!res.isConfirmed) return;
+
+                const fechaAtencionHoy = obtenerFechaHoyISO();
+                const registroAtendido = {
+                    idAtencion: 'ATN-' + Date.now(),
+                    fechaAtencion: fechaAtencionHoy,
+                    horaCita: cita.hora,
+                    nombre: cita.nombre,
+                    cedula: cita.cedula,
+                    edad: cita.edad,
+                    sexo: cita.sexo,
+                    telefono: cita.telefono,
+                    sintomatologia: cita.sintomatologia,
+                    metodoPago: res.value.monto > 0 ? res.value.metodo : 'Sin pago registrado',
+                    monto: res.value.monto > 0 ? res.value.monto : 0,
+                    pagado: res.value.monto > 0
+                };
+
+                const atendidos = JSON.parse(localStorage.getItem('pacientes_atendidos_os')) || [];
+                atendidos.push(registroAtendido);
+                localStorage.setItem('pacientes_atendidos_os', JSON.stringify(atendidos));
+
+                const historialGlobal = JSON.parse(localStorage.getItem('historial_asistencias_os')) || {};
+                const cedulaKey = cita.cedula.trim().toUpperCase();
+                if (!historialGlobal[cedulaKey]) {
+                    historialGlobal[cedulaKey] = {
+                        nombre: cita.nombre,
+                        cedula: cita.cedula,
+                        edad: cita.edad,
+                        sexo: cita.sexo,
+                        telefono: cita.telefono,
+                        visitas: []
+                    };
+                }
+                historialGlobal[cedulaKey].nombre = cita.nombre;
+                historialGlobal[cedulaKey].edad = cita.edad;
+                historialGlobal[cedulaKey].sexo = cita.sexo;
+                historialGlobal[cedulaKey].telefono = cita.telefono;
+
+                historialGlobal[cedulaKey].visitas.unshift({
+                    fecha: fechaAtencionHoy,
+                    hora: cita.hora,
+                    motivo: cita.sintomatologia,
+                    pago: registroAtendido.metodoPago,
+                    monto: registroAtendido.monto
+                });
+                localStorage.setItem('historial_asistencias_os', JSON.stringify(historialGlobal));
+
+                citasCacheAdmin.splice(index, 1);
+                localStorage.setItem('citas_medicas_os', JSON.stringify(citasCacheAdmin));
+
+                sincronizarIndexedDB();
+                cargarCitasAdmin();
+
+                cambiarPestanaMedico('pagos');
+                document.getElementById('filtroFechaAtendidos').value = fechaAtencionHoy;
+                renderizarPacientesAtendidos();
+
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: 'success',
+                    title: 'Paciente atendido y registrado en historial',
+                    showConfirmButton: false,
+                    timer: 2500
+                });
+            });
+        }
+
+        // ==========================================
+        // HISTORIAL DE ASISTENCIAS
+        // ==========================================
+        function buscarHistorialAsistencias() {
+            const cedulaInput = document.getElementById('buscarCedulaHistorialInput').value.trim().toUpperCase();
+            const contenedorResultado = document.getElementById('resultadoHistorialAsistencias');
+            const resumen = document.getElementById('resumenPacienteHistorial');
+            const timeline = document.getElementById('timelineAsistencias');
+
+            if (!cedulaInput) {
+                return Swal.fire('Atención', 'Por favor ingresa un número de cédula para consultar.', 'warning');
+            }
+
+            const historialGlobal = JSON.parse(localStorage.getItem('historial_asistencias_os')) || {};
+            const pacienteRecord = historialGlobal[cedulaInput];
+
+            contenedorResultado.classList.remove('hidden');
+
+            if (!pacienteRecord || !pacienteRecord.visitas || pacienteRecord.visitas.length === 0) {
+                resumen.innerHTML = `<p class="text-xs text-slate-600 font-semibold">No se encontraron registros de asistencias para la cédula: <b>${cedulaInput}</b></p>`;
+                timeline.innerHTML = `<p class="text-xs text-slate-500 bg-slate-50 p-4 rounded-xl border">El paciente no registra consultas atendidas previas con el especialista.</p>`;
+                return;
+            }
+
+            const totalVisitas = pacienteRecord.visitas.length;
+            resumen.innerHTML = `
+                <div>
+                    <h4 class="font-bold text-emerald-900 text-base">${pacienteRecord.nombre}</h4>
+                    <p class="text-xs text-slate-600">Cédula: <b>${pacienteRecord.cedula}</b> • Edad: ${pacienteRecord.edad || 'N/D'} años • Sexo: ${pacienteRecord.sexo || 'N/D'}</p>
+                    <p class="text-xs text-slate-600">Teléfono: ${pacienteRecord.telefono || 'N/D'}</p>
+                </div>
+                <div class="bg-white px-4 py-2 rounded-xl border border-emerald-300 text-center shadow-sm">
+                    <span class="block text-[10px] font-bold text-slate-500 uppercase">Total Asistencias</span>
+                    <span class="text-2xl font-extrabold text-emerald-700">${totalVisitas}</span>
+                </div>
+            `;
+
+            timeline.innerHTML = pacienteRecord.visitas.map((v, i) => `
+                <div class="p-4 bg-white border border-slate-200 rounded-xl shadow-sm space-y-1 text-sm flex justify-between items-start">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-xs font-bold">Consulta #${totalVisitas - i}</span>
+                            <span class="text-xs text-slate-500 font-semibold">📅 Fecha: ${v.fecha} (${v.hora})</span>
+                        </div>
+                        <p class="text-xs text-slate-700"><b>Motivo de Consulta:</b> ${v.motivo}</p>
+                        <p class="text-xs text-slate-500 mt-1"><b>Pago Registrado:</b> ${v.pago} ${v.monto > 0 ? `($${v.monto.toFixed(2)})` : ''}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ==========================================
+        // CAJA Y PAGOS
+        // ==========================================
+        function renderizarPacientesAtendidos() {
+            const inputFiltro = document.getElementById('filtroFechaAtendidos');
+            const hoyISO = obtenerFechaHoyISO();
+            if (!inputFiltro.value) inputFiltro.value = hoyISO;
+
+            const fechaSeleccionada = inputFiltro.value;
+            const esDiaAnterior = fechaSeleccionada < hoyISO;
+
+            const banner = document.getElementById('bannerEstadoDiaCaja');
+            banner.classList.remove('hidden');
+            if (esDiaAnterior) {
+                banner.className = "p-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-xs font-semibold flex items-center gap-2";
+                banner.innerHTML = `🔒 <span><b>Día Anterior (${fechaSeleccionada}):</b> Registro histórico cerrado y bloqueado contra modificaciones.</span>`;
+            } else {
+                banner.className = "p-3 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-900 text-xs font-semibold flex items-center gap-2";
+                banner.innerHTML = `🟢 <span><b>Día Activo (${fechaSeleccionada}):</b> Registros permanentes. Puedes registrar el pago de los pacientes pendientes.</span>`;
+            }
+
+            const todosAtendidos = JSON.parse(localStorage.getItem('pacientes_atendidos_os')) || [];
+            const atendidosDelDia = todosAtendidos.filter(p => p.fechaAtencion === fechaSeleccionada);
+
+            let totalDolares = 0, totalEuros = 0, totalTransferencia = 0, totalZelle = 0, totalTarjeta = 0;
+            atendidosDelDia.forEach(p => {
+                if (p.monto > 0) {
+                    if (p.metodoPago.includes('Dólares')) totalDolares += p.monto;
+                    else if (p.metodoPago.includes('Euros')) totalEuros += p.monto;
+                    else if (p.metodoPago.includes('Pago Móvil')) totalTransferencia += p.monto;
+                    else if (p.metodoPago.includes('Zelle')) totalZelle += p.monto;
+                    else if (p.metodoPago.includes('Tarjeta')) totalTarjeta += p.monto;
+                }
+            });
+
+            document.getElementById('resumenTotalesDia').innerHTML = `
+                <div class="bg-white p-2.5 rounded-lg border border-emerald-200 text-center">
+                    <span class="block text-[10px] font-bold text-slate-500 uppercase">💵 Dólares ($)</span>
+                    <span class="text-base font-extrabold text-emerald-700">$${totalDolares.toFixed(2)}</span>
+                </div>
+                <div class="bg-white p-2.5 rounded-lg border border-emerald-200 text-center">
+                    <span class="block text-[10px] font-bold text-slate-500 uppercase">💶 Euros (€)</span>
+                    <span class="text-base font-extrabold text-emerald-700">€${totalEuros.toFixed(2)}</span>
+                </div>
+                <div class="bg-white p-2.5 rounded-lg border border-emerald-200 text-center">
+                    <span class="block text-[10px] font-bold text-slate-500 uppercase">📱 Transf / P. Móvil</span>
+                    <span class="text-base font-extrabold text-emerald-700">${totalTransferencia.toFixed(2)}</span>
+                </div>
+                <div class="bg-white p-2.5 rounded-lg border border-emerald-200 text-center">
+                    <span class="block text-[10px] font-bold text-slate-500 uppercase">🌐 Zelle</span>
+                    <span class="text-base font-extrabold text-emerald-700">$${totalZelle.toFixed(2)}</span>
+                </div>
+                <div class="bg-white p-2.5 rounded-lg border border-emerald-200 text-center">
+                    <span class="block text-[10px] font-bold text-slate-500 uppercase">💳 Tarjeta / POS</span>
+                    <span class="text-base font-extrabold text-emerald-700">${totalTarjeta.toFixed(2)}</span>
+                </div>
+            `;
+
+            const tbody = document.getElementById('tablaPacientesAtendidos');
+            if (atendidosDelDia.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-slate-500">No hay pacientes atendidos en esta fecha.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = '';
+            atendidosDelDia.forEach(p => {
+                const tienePago = p.monto > 0 && p.metodoPago !== 'Sin pago registrado';
+                let accionCelda = '';
+
+                if (tienePago) {
+                    accionCelda = `<span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold">✅ Pago Registrado</span>`;
+                } else if (esDiaAnterior) {
+                    accionCelda = `<span class="px-2.5 py-1 bg-slate-200 text-slate-600 rounded-full text-xs font-semibold">🔒 Sin pago (Cerrado)</span>`;
+                } else {
+                    accionCelda = `<button onclick="registrarPagoPacienteAtendido('${p.idAtencion}')" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-sm">+ Registrar Pago</button>`;
+                }
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-3 whitespace-nowrap text-xs"><b>${p.fechaAtencion}</b><br>${p.horaCita}</td>
+                        <td class="p-3 font-semibold text-slate-800">${p.nombre}</td>
+                        <td class="p-3 text-xs"><b>${p.cedula}</b><br>${p.telefono}</td>
+                        <td class="p-3 text-xs text-slate-600 max-w-xs truncate">${p.sintomatologia}</td>
+                        <td class="p-3 text-xs font-semibold ${tienePago ? 'text-emerald-800' : 'text-red-600'}">
+                            ${tienePago ? p.metodoPago : 'Sin pago registrado'}
+                        </td>
+                        <td class="p-3 text-right font-bold ${tienePago ? 'text-emerald-700' : 'text-slate-400'}">
+                            ${tienePago ? p.monto.toFixed(2) : '0.00'}
+                        </td>
+                        <td class="p-3 text-center">${accionCelda}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        function registrarPagoPacienteAtendido(idAtencion) {
+            const hoyISO = obtenerFechaHoyISO();
+            const todosAtendidos = JSON.parse(localStorage.getItem('pacientes_atendidos_os')) || [];
+            const idx = todosAtendidos.findIndex(p => p.idAtencion === idAtencion);
+            if (idx === -1) return;
+
+            const paciente = todosAtendidos[idx];
+            if (paciente.fechaAtencion < hoyISO) {
+                return Swal.fire('Día Bloqueado', 'No se pueden modificar días anteriores.', 'error');
+            }
+
+            Swal.fire({
+                title: `💵 Registrar Pago - ${paciente.nombre}`,
+                html: `
+                    <div class="text-left text-sm space-y-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Método / Moneda *</label>
+                            <select id="modalPagoMetodo" class="w-full p-2.5 border rounded-lg bg-white">
+                                <option value="Dólares ($)">💵 Dólares ($)</option>
+                                <option value="Euros (€)">💶 Euros (€)</option>
+                                <option value="Pago Móvil / Transferencia">📱 Pago Móvil / Transferencia</option>
+                                <option value="Zelle">🌐 Zelle</option>
+                                <option value="Punto de Venta / Tarjeta">💳 Punto de Venta / Tarjeta</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Monto Recibido *</label>
+                            <input id="modalPagoMonto" type="number" step="0.01" min="0.01" placeholder="Ej: 30.00" class="w-full p-2.5 border rounded-lg bg-white">
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: 'Guardar Pago',
+                confirmButtonColor: '#059669',
+                showCancelButton: true,
+                preConfirm: () => {
+                    const metodo = document.getElementById('modalPagoMetodo').value;
+                    const monto = parseFloat(document.getElementById('modalPagoMonto').value);
+                    if (!monto || monto <= 0) {
+                        Swal.showValidationMessage('Ingresa un monto válido mayor a 0.');
+                        return false;
+                    }
+                    return { metodo, monto };
+                }
+            }).then(res => {
+                if (!res.isConfirmed) return;
+                
+                todosAtendidos[idx].metodoPago = res.value.metodo;
+                todosAtendidos[idx].monto = res.value.monto;
+                todosAtendidos[idx].pagado = true;
+                localStorage.setItem('pacientes_atendidos_os', JSON.stringify(todosAtendidos));
+
+                const historialGlobal = JSON.parse(localStorage.getItem('historial_asistencias_os')) || {};
+                const cedulaKey = paciente.cedula.trim().toUpperCase();
+                if (historialGlobal[cedulaKey] && historialGlobal[cedulaKey].visitas) {
+                    const visitaMatch = historialGlobal[cedulaKey].visitas.find(v => v.fecha === paciente.fechaAtencion && v.motivo === paciente.sintomatologia);
+                    if (visitaMatch) {
+                        visitaMatch.pago = res.value.metodo;
+                        visitaMatch.monto = res.value.monto;
+                        localStorage.setItem('historial_asistencias_os', JSON.stringify(historialGlobal));
+                    }
+                }
+
+                sincronizarIndexedDB();
+                renderizarPacientesAtendidos();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Pago registrado correctamente', showConfirmButton: false, timer: 2000 });
+            });
+        }
+
+        // ==========================================
+        // REPORTE PDF
+        // ==========================================
+        function descargarReportePagosPDF() {
+            const cfg = obtenerConfigConsultorio();
+            const fechaSeleccionada = document.getElementById('filtroFechaAtendidos').value || obtenerFechaHoyISO();
+            const todosAtendidos = JSON.parse(localStorage.getItem('pacientes_atendidos_os')) || [];
+            const atendidosDelDia = todosAtendidos.filter(p => p.fechaAtencion === fechaSeleccionada);
+
+            let totalDolares = 0, totalEuros = 0, totalTransferencia = 0, totalZelle = 0, totalTarjeta = 0;
+
+            let filas = atendidosDelDia.map((p, i) => {
+                const tienePago = p.monto > 0 && p.metodoPago !== 'Sin pago registrado';
+                if (tienePago) {
+                    if (p.metodoPago.includes('Dólares')) totalDolares += p.monto;
+                    else if (p.metodoPago.includes('Euros')) totalEuros += p.monto;
+                    else if (p.metodoPago.includes('Pago Móvil')) totalTransferencia += p.monto;
+                    else if (p.metodoPago.includes('Zelle')) totalZelle += p.monto;
+                    else if (p.metodoPago.includes('Tarjeta')) totalTarjeta += p.monto;
+                }
+
+                return `
+                    <tr>
+                        <td style="border:1px solid #cbd5e1; padding:6px;">${i + 1}</td>
+                        <td style="border:1px solid #cbd5e1; padding:6px;">${p.horaCita}</td>
+                        <td style="border:1px solid #cbd5e1; padding:6px;"><b>${p.nombre}</b><br><span style="font-size:10px; color:#475569;">${p.cedula}</span></td>
+                        <td style="border:1px solid #cbd5e1; padding:6px; color:${tienePago ? '#065f46' : '#dc2626'}; font-weight:bold;">
+                            ${tienePago ? p.metodoPago : 'Sin pago registrado'}
+                        </td>
+                        <td style="border:1px solid #cbd5e1; padding:6px; text-align:right; font-weight:bold;">
+                            ${tienePago ? p.monto.toFixed(2) : '0.00'}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            if (atendidosDelDia.length === 0) {
+                filas = `<tr><td colspan="5" style="border:1px solid #cbd5e1; padding:10px; text-align:center;">No hubo pacientes atendidos en esta fecha.</td></tr>`;
+            }
+
+            document.getElementById('tituloVistaPreviaPDF').textContent = `Reporte Diario - ${fechaSeleccionada}`;
+            document.getElementById('areaImpresionPDF').innerHTML = `
+                <div style="border-bottom:2px solid #047857; padding-bottom:10px; margin-bottom:15px;">
+                    <h2 style="font-size:18px; font-weight:bold; color:#065f46; margin:0;">${cfg.medico}</h2>
+                    <p style="font-size:12px; color:#475569; margin:2px 0;">${cfg.direccion}</p>
+                    <p style="font-size:13px; font-weight:bold; color:#1e293b; margin-top:8px;">REPORTE DE PACIENTES ATENDIDOS Y CONTROL DE CAJA</p>
+                    <p style="font-size:12px; color:#334155;">Fecha: <b>${fechaSeleccionada}</b> | Total Pacientes: <b>${atendidosDelDia.length}</b></p>
+                </div>
+
+                <table style="width:100%; border-collapse:collapse; font-size:11px;">
+                    <thead>
+                        <tr style="background:#059669; color:#ffffff;">
+                            <th style="border:1px solid #047857; padding:6px; text-align:left;">#</th>
+                            <th style="border:1px solid #047857; padding:6px; text-align:left;">Hora</th>
+                            <th style="border:1px solid #047857; padding:6px; text-align:left;">Paciente / Cédula</th>
+                            <th style="border:1px solid #047857; padding:6px; text-align:left;">Método / Moneda</th>
+                            <th style="border:1px solid #047857; padding:6px; text-align:right;">Monto Recibido</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filas}
+                    </tbody>
+                </table>
+
+                <div style="margin-top:20px; background:#ecfdf5; border:1px solid #a7f3d0; padding:12px; border-radius:8px; font-size:12px;">
+                    <h4 style="font-weight:bold; color:#065f46; margin:0 0 8px 0;">TOTALIDAD DEL DINERO RECIBIDO EN EL DÍA (${fechaSeleccionada}):</h4>
+                    <table style="width:100%; font-size:12px;">
+                        <tr><td>💵 <b>Total Dólares ($):</b></td><td style="text-align:right; font-weight:bold;">$${totalDolares.toFixed(2)}</td></tr>
+                        <tr><td>💶 <b>Total Euros (€):</b></td><td style="text-align:right; font-weight:bold;">€${totalEuros.toFixed(2)}</td></tr>
+                        <tr><td>📱 <b>Total Pago Móvil / Transferencias:</b></td><td style="text-align:right; font-weight:bold;">${totalTransferencia.toFixed(2)}</td></tr>
+                        <tr><td>🌐 <b>Total Zelle:</b></td><td style="text-align:right; font-weight:bold;">$${totalZelle.toFixed(2)}</td></tr>
+                        <tr><td>💳 <b>Total Punto de Venta / Tarjeta:</b></td><td style="text-align:right; font-weight:bold;">${totalTarjeta.toFixed(2)}</td></tr>
+                    </table>
+                </div>
+            `;
+            document.getElementById('contenedorModalPDF').classList.remove('hidden');
+        }
+
+        function cerrarModalPDF() { document.getElementById('contenedorModalPDF').classList.add('hidden'); }
+        function descargarArchivoPDF() {
+            const fechaSeleccionada = document.getElementById('filtroFechaAtendidos').value || obtenerFechaHoyISO();
+            html2pdf().from(document.getElementById('areaImpresionPDF')).save(`Reporte_Caja_${fechaSeleccionada}.pdf`);
+        }
+
+        // ==========================================
+        // NAVEGACIÓN Y RESPALDO
+        // ==========================================
+        function cambiarPestanaMedico(pestana) {
+            ['agenda', 'historial', 'config-agenda', 'pagos', 'respaldo-bd'].forEach(p => {
+                document.getElementById(`seccion-${p}`).classList.add('hidden');
+                document.getElementById(`tab-${p}`).className = "px-3 sm:px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-xs sm:text-sm transition";
+            });
+            document.getElementById(`seccion-${pestana}`).classList.remove('hidden');
+            document.getElementById(`tab-${pestana}`).className = "px-3 sm:px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium text-xs sm:text-sm transition";
+            if (pestana === 'pagos') renderizarPacientesAtendidos();
+            if (pestana === 'config-agenda') cargarFormularioConfig();
+        }
+
+        function exportarBaseDatosLocal() {
+            const respaldo = {
+                config: obtenerConfigConsultorio(),
+                citas: JSON.parse(localStorage.getItem('citas_medicas_os')) || [],
+                atendidos: JSON.parse(localStorage.getItem('pacientes_atendidos_os')) || [],
+                historialAsistencias: JSON.parse(localStorage.getItem('historial_asistencias_os')) || {},
+                usuarios: obtenerUsuariosAdmin()
+            };
+            const blob = new Blob([JSON.stringify(respaldo, null, 2)], { type: "application/json" });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `Respaldo_Asistente_${obtenerFechaHoyISO()}.json`;
+            a.click();
+        }
+
+        function importarBaseDatosLocal(e) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const data = JSON.parse(ev.target.result);
+                if (data.config) localStorage.setItem('config_consultorio_os', JSON.stringify(data.config));
+                if (data.citas) localStorage.setItem('citas_medicas_os', JSON.stringify(data.citas));
+                if (data.atendidos) localStorage.setItem('pacientes_atendidos_os', JSON.stringify(data.atendidos));
+                if (data.historialAsistencias) localStorage.setItem('historial_asistencias_os', JSON.stringify(data.historialAsistencias));
+                if (data.usuarios) localStorage.setItem('usuarios_admin_os', JSON.stringify(data.usuarios));
+                Swal.fire('Restaurado', 'Base de datos cargada con éxito', 'success');
+                cargarFormularioConfig();
+                cargarCitasAdmin();
+                renderizarPacientesAtendidos();
+            };
+            reader.readAsText(e.target.files[0]);
+        }
+
+        // ==========================================
+        // VALIDACIÓN DE RUTA Y SINCRONIZACIÓN AL CARGAR
+        // ==========================================
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('portal') === 'paciente') {
+                document.getElementById('vista-login').classList.add('hidden');
+                document.getElementById('vista-medico').classList.add('hidden');
+                document.getElementById('headerAdmin').classList.add('hidden');
+                document.getElementById('vista-paciente').classList.remove('hidden');
+                cargarFormularioConfig();
+            } else {
+                const sesionGuardada = JSON.parse(localStorage.getItem('sesion_admin_activa_os') || 'null');
+                const usuarios = obtenerUsuariosAdmin();
+                const sesionValida = sesionGuardada && usuarios.some(u => u.usuario.toLowerCase() === sesionGuardada.usuario.toLowerCase());
+
+                if (sesionValida) {
+                    activarVistaAdmin(sesionGuardada.usuario);
+                } else {
+                    localStorage.removeItem('sesion_admin_activa_os');
+                    document.getElementById('vista-login').classList.remove('hidden');
+                    document.getElementById('vista-paciente').classList.add('hidden');
+                    document.getElementById('vista-medico').classList.add('hidden');
+                    document.getElementById('headerAdmin').classList.add('hidden');
+                }
+            }
+
+            sincronizarDesdeSheets(false);
+            setInterval(() => sincronizarDesdeSheets(false), 5000);
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) sincronizarDesdeSheets(false);
+            });
+        });
+    </script>
+</body>
+</html>
